@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+
+<!-- アクションボタン -->
+<div class="action-bar">
+  <a href="/read" class="btn btn-primary btn-lg">読み取り</a>
+  <a href="/meters/new" class="btn btn-outline">+ メーター登録</a>
+</div>
+
+<!-- 登録済みメーター一覧 -->
+<section class="card">
+  <h2>登録済みメーター</h2>
+  {% if meters %}
+  <div class="meter-list">
+    {% for m in meters %}
+    <div class="meter-item">
+      <div>
+        <strong>{{ m.name }}</strong>
+        <span class="tag">{{ m.unit }}</span>
+        <span class="sub">{{ m.calibration_points|length }}点補正</span>
+      </div>
+      <div class="meter-item-actions">
+        <a href="/meters/{{ m.id }}" class="btn btn-sm">編集</a>
+        <button class="btn btn-sm btn-danger" onclick="deleteMeter('{{ m.id }}')">削除</button>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty">まだ登録されていません</p>
+  {% endif %}
+</section>
+
+<!-- 読み取り履歴 -->
+<section class="card">
+  <div class="flex-between">
+    <h2>読み取り履歴</h2>
+    <a href="/download" class="btn btn-sm">CSV</a>
+  </div>
+  <table>
+    <thead><tr><th>日時</th><th>値</th><th>単位</th><th>メーター</th></tr></thead>
+    <tbody>
+    {% for r in readings %}
+      <tr><td>{{ r[0] }}</td><td>{{ r[1] }}</td><td>{{ r[2] }}</td><td>{{ r[3] }}</td></tr>
+    {% else %}
+      <tr><td colspan="4" class="empty">データなし</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<script>
+async function deleteMeter(id) {
+  if (!confirm('このメーターを削除しますか？')) return;
+  await fetch('/api/meters/' + id, {method:'DELETE'});
+  location.reload();
+}
+</script>
+{% endblock %}

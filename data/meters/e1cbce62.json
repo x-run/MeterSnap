@@ -1,0 +1,99 @@
+{
+  "id": "e1cbce62",
+  "name": "テスト",
+  "unit": "A",
+  "image": "20260207_213634_55d0c8.jpeg",
+  "image_width": 264,
+  "image_height": 191,
+  "center": {
+    "x": 129,
+    "y": 86
+  },
+  "calibration_points": [
+    {
+      "angle": 302,
+      "value": 0
+    },
+    {
+      "angle": 289.5,
+      "value": 0.5
+    },
+    {
+      "angle": 278.7,
+      "value": 1
+    },
+    {
+      "angle": 267.4,
+      "value": 1.5
+    },
+    {
+      "angle": 253.1,
+      "value": 2
+    },
+    {
+      "angle": 242.8,
+      "value": 2.5
+    },
+    {
+      "angle": 230,
+      "value": 3
+    },
+    {
+      "angle": 217.4,
+      "value": 3.5
+    },
+    {
+      "angle": 205.3,
+      "value": 4
+    },
+    {
+      "angle": 193.2,
+      "value": 4.5
+    },
+    {
+      "angle": 178.5,
+      "value": 5
+    },
+    {
+      "angle": 167.7,
+      "value": 5.5
+    },
+    {
+      "angle": 155.3,
+      "value": 6
+    },
+    {
+      "angle": 141.5,
+      "value": 6.5
+    },
+    {
+      "angle": 131.4,
+      "value": 7
+    },
+    {
+      "angle": 118.2,
+      "value": 7.5
+    },
+    {
+      "angle": 106.6,
+      "value": 8
+    },
+    {
+      "angle": 92.6,
+      "value": 8.5
+    },
+    {
+      "angle": 82.2,
+      "value": 9
+    },
+    {
+      "angle": 71.1,
+      "value": 9.5
+    },
+    {
+      "angle": 59.4,
+      "value": 10
+    }
+  ],
+  "created": "2026-02-07T21:39:02.590240"
+}

@@ -1,0 +1,266 @@
+{% extends "base.html" %}
+{% block title %} - メーター登録{% endblock %}
+{% block content %}
+<a href="/" class="back">&larr; 戻る</a>
+
+<!-- Step 1 : 名前・単位・画像 -->
+<section class="card" id="step1">
+  <h2>1. メーター情報</h2>
+  <div class="form-row">
+    <div class="field grow"><label>名前</label>
+      <input id="mName" placeholder="例: 電流計 #1" value="{{ meter.name if meter else '' }}"></div>
+    <div class="field w80"><label>単位</label>
+      <input id="mUnit" placeholder="A" value="{{ meter.unit if meter else '' }}"></div>
+  </div>
+  <label for="imgInput" class="btn btn-primary btn-block">メーター画像を撮影 / 選択</label>
+  <input type="file" id="imgInput" accept="image/*" capture="environment" hidden>
+</section>
+
+<div id="msg" class="msg hidden"></div>
+
+<!-- Step 2 : 中心 + キャリブレーション -->
+<section class="card hidden" id="step2">
+  <h2>2. 中心をタップして指定</h2>
+  <p class="hint" id="modeHint">画像上のメーター中心をタップしてください</p>
+  <div class="canvas-wrap"><canvas id="cv"></canvas></div>
+  <button class="btn btn-outline btn-block" id="modeSwitchBtn" disabled>中心を確定 → 目盛り登録へ</button>
+</section>
+
+<!-- Step 3 : 目盛り登録 -->
+<section class="card hidden" id="step3">
+  <h2>3. 目盛りを登録</h2>
+  <p class="hint">赤い線をドラッグして目盛り位置に合わせ、値を入力して「追加」</p>
+  <div class="input-panel">
+    <div class="input-row">
+      <input type="number" id="ptVal" step="any" inputmode="decimal" placeholder="値">
+      <button class="btn btn-accent" id="addBtn">追加</button>
+    </div>
+  </div>
+  <div id="ptList" class="pt-list"></div>
+</section>
+
+<!-- Step 4 : 保存 -->
+<section class="card hidden" id="step4">
+  <button class="btn btn-primary btn-block btn-lg" id="saveBtn" disabled>この設定で保存する</button>
+</section>
+
+{% if meter %}
+<script>var EXISTING = {{ meter | tojson }};</script>
+{% else %}
+<script>var EXISTING = null;</script>
+{% endif %}
+
+<script>
+// ---- state ----
+const S = {
+  file: null, filename: '',
+  imgW: 0, imgH: 0,
+  cx: 0, cy: 0, radius: 0,
+  mode: 'center',   // 'center' | 'calibrate'
+  angle: 225,
+  dragging: false,
+  points: [],        // [{angle, value}]
+};
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d');
+let IMG = new Image();
+
+// ---- image upload ----
+$('imgInput').onchange = async function() {
+  const f = this.files[0]; if (!f) return;
+  S.file = f;
+  showMsg('ゲージを検出中…','loading');
+
+  const fd = new FormData(); fd.append('image', f);
+  const r = await fetch('/api/upload-image',{method:'POST',body:fd});
+  const d = await r.json();
+  if (!d.success){ showMsg(d.error,'error'); return; }
+
+  Object.assign(S, {filename:d.filename, imgW:d.image_width, imgH:d.image_height,
+                     cx:d.cx, cy:d.cy, radius:d.radius, mode:'center', points:[]});
+                     IMG.onload = () => {
+  $('step2').classList.remove('hidden'); // ★先に表示
+  setupCv();
+  draw();
+  hideMsg();
+};
+
+  IMG.src = '/data/uploads/' + d.filename;
+};
+
+// ---- canvas ----
+function setupCv(){
+  const w = cv.parentElement.clientWidth;
+  const sc = w / S.imgW;
+  cv.width = w; cv.height = S.imgH * sc;
+}
+function sc(){ return cv.width / S.imgW; }
+
+function draw(){
+  const s = sc(), scx = S.cx*s, scy = S.cy*s, sr = S.radius*s;
+  ctx.clearRect(0,0,cv.width,cv.height);
+  ctx.drawImage(IMG,0,0,cv.width,cv.height);
+
+  // center
+  ctx.strokeStyle='rgba(26,115,232,.5)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(scx,scy,sr,0,Math.PI*2); ctx.stroke();
+  // crosshair
+  ctx.strokeStyle='#1a73e8'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(scx-12,scy); ctx.lineTo(scx+12,scy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(scx,scy-12); ctx.lineTo(scx,scy+12); ctx.stroke();
+
+  // registered points (green)
+  S.points.forEach(p => {
+    const r2 = p.angle * Math.PI/180;
+    const ex = scx + sr*.92*Math.cos(r2), ey = scy - sr*.92*Math.sin(r2);
+    ctx.strokeStyle='rgba(52,168,83,.6)'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(scx,scy); ctx.lineTo(ex,ey); ctx.stroke();
+    ctx.fillStyle='#34a853'; ctx.font='bold 12px sans-serif';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    const lx = scx + sr*1.02*Math.cos(r2), ly = scy - sr*1.02*Math.sin(r2);
+    ctx.fillText(String(p.value), lx, ly);
+  });
+
+  // guide line (red) — only in calibrate mode
+  if (S.mode === 'calibrate') {
+    const r2 = S.angle * Math.PI/180;
+    const gx = scx + sr*.92*Math.cos(r2), gy = scy - sr*.92*Math.sin(r2);
+    ctx.strokeStyle='#ea4335'; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.moveTo(scx,scy); ctx.lineTo(gx,gy); ctx.stroke();
+    ctx.fillStyle='#ea4335';
+    ctx.beginPath(); ctx.arc(gx,gy,10,0,Math.PI*2); ctx.fill();
+  }
+}
+
+// ---- interaction ----
+function angleFromEvt(e){
+  const rect = cv.getBoundingClientRect(), s = sc();
+  const cx = (('touches' in e ? e.touches[0].clientX : e.clientX) - rect.left)/s;
+  const cy2 = (('touches' in e ? e.touches[0].clientY : e.clientY) - rect.top)/s;
+  let a = Math.atan2(-(cy2-S.cy), cx-S.cx)*180/Math.PI;
+  if(a<0) a+=360;
+  return Math.round(a*10)/10;
+}
+
+function posFromEvt(e){
+  const rect = cv.getBoundingClientRect(), s = sc();
+  const x = (('touches' in e ? e.touches[0].clientX : e.clientX) - rect.left)/s;
+  const y = (('touches' in e ? e.touches[0].clientY : e.clientY) - rect.top)/s;
+  return {x: Math.round(x), y: Math.round(y)};
+}
+
+// center mode: click to set center
+cv.addEventListener('click', e => {
+  if (S.mode !== 'center') return;
+  const p = posFromEvt(e);
+  S.cx = p.x; S.cy = p.y;
+  draw();
+  $('modeSwitchBtn').disabled = false;
+  showMsg('中心を設定しました。確定ボタンを押してください','info');
+});
+
+// calibrate mode: drag to rotate line
+cv.addEventListener('mousedown', e => { if(S.mode==='calibrate'){e.preventDefault(); S.dragging=true; S.angle=angleFromEvt(e); draw();}});
+cv.addEventListener('mousemove', e => { if(S.dragging){e.preventDefault(); S.angle=angleFromEvt(e); draw();}});
+cv.addEventListener('mouseup',   () => S.dragging=false);
+cv.addEventListener('mouseleave', () => S.dragging=false);
+cv.addEventListener('touchstart', e => { if(S.mode==='calibrate'){e.preventDefault(); S.dragging=true; S.angle=angleFromEvt(e); draw();}}, {passive:false});
+cv.addEventListener('touchmove',  e => { if(S.dragging){e.preventDefault(); S.angle=angleFromEvt(e); draw();}}, {passive:false});
+cv.addEventListener('touchend',   () => S.dragging=false);
+
+// mode switch
+$('modeSwitchBtn').onclick = () => {
+  S.mode = 'calibrate';
+  $('modeHint').textContent = '赤い線をドラッグして目盛りに合わせてください';
+  $('modeSwitchBtn').classList.add('hidden');
+  $('step3').classList.remove('hidden');
+  $('step4').classList.remove('hidden');
+  showMsg('赤い線をドラッグして目盛りの位置に合わせ、値を入力してください','info');
+  draw();
+};
+
+// add calibration point
+$('addBtn').onclick = addPoint;
+$('ptVal').onkeydown = e => { if(e.key==='Enter'){e.preventDefault(); addPoint();} };
+
+function addPoint(){
+  const v = parseFloat($('ptVal').value);
+  if(isNaN(v)){ $('ptVal').focus(); return; }
+  S.points.push({angle: S.angle, value: v});
+  $('ptVal').value = '';
+  $('ptVal').focus();
+  draw(); renderPts(); updateSave();
+  showMsg(`目盛り「${v}」を追加しました`, 'info');
+}
+
+function renderPts(){
+  const el = $('ptList');
+  const sorted = [...S.points].sort((a,b)=>a.value-b.value);
+  el.innerHTML = sorted.map((p,i) => {
+    const oi = S.points.indexOf(p);
+    return `<div class="pt-row">
+      <span class="pt-badge">${p.value}</span>
+      <span class="pt-angle">${p.angle}°</span>
+      <button class="pt-del" onclick="delPt(${oi})">&times;</button>
+    </div>`;
+  }).join('');
+}
+function delPt(i){ S.points.splice(i,1); draw(); renderPts(); updateSave(); }
+function updateSave(){ $('saveBtn').disabled = S.points.length < 2; }
+
+// save
+$('saveBtn').onclick = async () => {
+  const name = $('mName').value.trim();
+  if(!name){ alert('名前を入力してください'); return; }
+  const body = {
+    id: EXISTING?.id || undefined,
+    name, unit: $('mUnit').value.trim(),
+    image: S.filename,
+    image_width: S.imgW, image_height: S.imgH,
+    center: {x: S.cx, y: S.cy},
+    calibration_points: S.points,
+    created: EXISTING?.created || undefined,
+  };
+  const r = await fetch('/api/meters',{method:'POST',
+    headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  const d = await r.json();
+  if(d.success){
+    showMsg(`「${name}」を保存しました！`, 'success');
+    $('saveBtn').disabled=true; $('saveBtn').textContent='保存済み';
+  } else { showMsg(d.error,'error'); }
+};
+
+// message helper
+function showMsg(t,c){ const m=$('msg'); m.textContent=t; m.className='msg '+c; }
+function hideMsg(){ $('msg').className='msg hidden'; }
+
+// ---- load existing meter ----
+if (EXISTING) {
+  $('mName').value = EXISTING.name;
+  $('mUnit').value = EXISTING.unit;
+  S.filename = EXISTING.image;
+  S.imgW = EXISTING.image_width;
+  S.imgH = EXISTING.image_height;
+  S.cx = EXISTING.center.x;
+  S.cy = EXISTING.center.y;
+  S.points = [...EXISTING.calibration_points];
+  // find radius from points or default
+  const maxNorm = Math.max(...S.points.map(p => {
+    const n = (S.points[0].angle - p.angle) % 360;
+    return n;
+  }));
+  S.radius = Math.min(S.imgW, S.imgH) / 3;
+
+  IMG.onload = () => {
+    setupCv(); S.mode='calibrate';
+    $('step2').classList.remove('hidden');
+    $('modeSwitchBtn').classList.add('hidden');
+    $('step3').classList.remove('hidden');
+    $('step4').classList.remove('hidden');
+    $('modeHint').textContent = '赤い線をドラッグして目盛りに合わせてください';
+    draw(); renderPts(); updateSave();
+  };
+  IMG.src = '/data/uploads/' + EXISTING.image;
+}
+</script>
+{% endblock %}
